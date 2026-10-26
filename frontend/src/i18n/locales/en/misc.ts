@@ -119,6 +119,17 @@ export default {
     noActiveSubscriptionsDesc:
       "You don't have any active subscriptions. Contact administrator to get one.",
     failedToLoad: 'Failed to load subscriptions',
+    resetDailyQuota: 'Reset daily quota',
+    dailyResetRule: 'Each reset costs 24 hours of subscription time and requires at least 72 hours remaining. Up to 4 resets per user per server calendar day across all subscriptions. Weekly/monthly usage stays unchanged.',
+    dailyResetCount: 'Resets today: {used} / {limit} (all subscriptions)',
+    dailyResetConfirm: 'Reset the daily quota for "{name}"? This costs 24 hours. The new expiration will be {expires}. Weekly/monthly limits still apply.',
+    dailyResetSuccess: 'Daily quota reset; subscription shortened by 1 day',
+    dailyResetTooShort: 'At least 72 hours must remain to reset',
+    dailyResetLimitReached: 'Daily reset limit reached (4)',
+    dailyResetInactive: 'Only active subscriptions that have started can be reset',
+    dailyResetStatusUnavailable: 'Reset status unavailable. Refresh to try again.',
+    dailyResetFailed: 'Reset failed. Refresh and try again.',
+    dailyResetUncertain: 'Unable to confirm the result. Retry this operation; duplicate requests will not cost another day.',
     status: {
       active: 'Active',
       expired: 'Expired',

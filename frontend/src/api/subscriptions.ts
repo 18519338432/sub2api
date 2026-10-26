@@ -6,6 +6,25 @@
 import { apiClient } from './client'
 import type { UserSubscription, SubscriptionProgress } from '@/types'
 
+export interface DailyQuotaResetStatus {
+  used: number
+  remaining: number
+  limit: number
+  resets_at: string
+}
+
+export async function getDailyResetStatus(): Promise<DailyQuotaResetStatus> {
+  const response = await apiClient.get<DailyQuotaResetStatus>('/subscriptions/daily-reset-status')
+  return response.data
+}
+
+export async function resetDailyQuota(subscriptionId: number, requestId: string): Promise<UserSubscription> {
+  const response = await apiClient.post<UserSubscription>(`/subscriptions/${subscriptionId}/reset-daily-quota`, {
+    request_id: requestId
+  })
+  return response.data
+}
+
 /**
  * Subscription summary for user dashboard
  */
@@ -68,6 +87,8 @@ export async function getSubscriptionProgress(
 }
 
 export default {
+  getDailyResetStatus,
+  resetDailyQuota,
   getMySubscriptions,
   getActiveSubscriptions,
   getSubscriptionsProgress,

@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"strconv"
+
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -8,6 +10,49 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+// GetDailyResetStatus returns the user's shared daily allowance across plans.
+func (h *SubscriptionHandler) GetDailyResetStatus(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not found in context")
+		return
+	}
+	status, err := h.subscriptionService.GetDailyQuotaResetStatus(c.Request.Context(), subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, status)
+}
+
+// ResetDailyQuota exchanges one day of the authenticated user's subscription
+// for a fresh daily allowance. A stable request ID makes retries idempotent.
+func (h *SubscriptionHandler) ResetDailyQuota(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not found in context")
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		response.BadRequest(c, "Invalid subscription ID")
+		return
+	}
+	var req struct {
+		RequestID string `json:"request_id" binding:"required,uuid"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "A valid request_id UUID is required")
+		return
+	}
+	sub, err := h.subscriptionService.ResetOwnDailyQuota(c.Request.Context(), subject.UserID, id, req.RequestID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, dto.UserSubscriptionFromService(sub).Localized(c.GetHeader("Accept-Language")))
+}
 
 // SubscriptionSummaryItem represents a subscription item in summary
 type SubscriptionSummaryItem struct {

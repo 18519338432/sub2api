@@ -135,6 +135,25 @@
               >
                 {{ formatDailyUsageWindow(subscription) }}
               </p>
+              <div class="space-y-2 border-t border-gray-100 pt-3 dark:border-dark-700">
+                <p class="text-xs text-gray-500 dark:text-dark-400">
+                  {{ t('userSubscriptions.dailyResetRule') }}
+                </p>
+                <p v-if="dailyResetStatus" class="text-xs text-gray-500 dark:text-dark-400">
+                  {{ t('userSubscriptions.dailyResetCount', { used: dailyResetStatus.used, limit: dailyResetStatus.limit }) }}
+                </p>
+                <button
+                  type="button"
+                  class="btn btn-secondary text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                  :disabled="resetting || !!resetDisabledReason(subscription)"
+                  @click="openResetDialog(subscription)"
+                >
+                  {{ t('userSubscriptions.resetDailyQuota') }}
+                </button>
+                <p v-if="resetDisabledReason(subscription)" class="text-xs text-amber-700 dark:text-amber-300">
+                  {{ resetDisabledReason(subscription) }}
+                </p>
+              </div>
             </div>
 
             <!-- Weekly Usage -->
@@ -244,18 +263,41 @@
         </div>
       </div>
     </div>
+    <BaseDialog
+      :show="!!resetTarget"
+      :title="t('userSubscriptions.resetDailyQuota')"
+      width="narrow"
+      :show-close-button="!resetting"
+      @close="closeResetDialog"
+    >
+      <p class="text-sm text-gray-600 dark:text-gray-300">
+        {{ t('userSubscriptions.dailyResetConfirm', { name: resetTarget?.group?.name || '', expires: resetExpiryPreview }) }}
+      </p>
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <button type="button" class="btn btn-secondary" :disabled="resetting" @click="closeResetDialog">
+            {{ t('common.cancel') }}
+          </button>
+          <button type="button" class="btn btn-primary" :disabled="resetting" @click="confirmDailyReset">
+            {{ resetting ? t('common.processing') : t('common.confirm') }}
+          </button>
+        </div>
+      </template>
+    </BaseDialog>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import subscriptionsAPI from '@/api/subscriptions'
+import type { DailyQuotaResetStatus } from '@/api/subscriptions'
 import type { UserSubscription } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
 import { formatDateTimeToMinute } from '@/utils/format'
 import { hasPeakRate, formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
 import { platformBorderClass, platformBadgeClass, platformButtonClass, platformLabel } from '@/utils/platformColors'
@@ -282,6 +324,83 @@ const appStore = useAppStore()
 
 const subscriptions = ref<UserSubscription[]>([])
 const loading = ref(true)
+const dailyResetStatus = ref<DailyQuotaResetStatus | null>(null)
+const resetTarget = ref<UserSubscription | null>(null)
+const resetting = ref(false)
+const resetRequestId = ref('')
+const resetExpiryPreview = computed(() => {
+  const expires = resetTarget.value?.expires_at
+  return expires ? formatDateTimeToMinute(new Date(new Date(expires).getTime() - 86400000)) : ''
+})
+
+function resetDisabledReason(subscription: UserSubscription): string {
+  if (!dailyResetStatus.value) return t('userSubscriptions.dailyResetStatusUnavailable')
+  if (dailyResetStatus.value.remaining <= 0) return t('userSubscriptions.dailyResetLimitReached')
+  if (subscription.status !== 'active' || new Date(subscription.starts_at).getTime() > Date.now()) {
+    return t('userSubscriptions.dailyResetInactive')
+  }
+  if (!subscription.expires_at || new Date(subscription.expires_at).getTime() - Date.now() < 3 * 86400000) {
+    return t('userSubscriptions.dailyResetTooShort')
+  }
+  return ''
+}
+
+function openResetDialog(subscription: UserSubscription) {
+  resetTarget.value = subscription
+  // Persist the ID until a known response arrives. A network retry must not
+  // spend another subscription day.
+  const key = `subscription-daily-reset:${subscription.user_id}:${subscription.id}`
+  let requestId = sessionStorage.getItem(key)
+  if (!requestId) {
+    const bytes = crypto.getRandomValues(new Uint8Array(16))
+    bytes[6] = (bytes[6] & 0x0f) | 0x40
+    bytes[8] = (bytes[8] & 0x3f) | 0x80
+    const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
+    requestId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+    sessionStorage.setItem(key, requestId)
+  }
+  resetRequestId.value = requestId
+}
+
+function closeResetDialog() {
+  if (!resetting.value) resetTarget.value = null
+}
+
+async function confirmDailyReset() {
+  const target = resetTarget.value
+  if (!target || resetting.value) return
+  resetting.value = true
+  const key = `subscription-daily-reset:${target.user_id}:${target.id}`
+  try {
+    await subscriptionsAPI.resetDailyQuota(target.id, resetRequestId.value)
+    sessionStorage.removeItem(key)
+    resetTarget.value = null
+    appStore.showSuccess(t('userSubscriptions.dailyResetSuccess'))
+    await loadSubscriptions()
+  } catch (error: unknown) {
+    const err = error as { status?: number; reason?: string }
+    const reasons: Record<string, string> = {
+      DAILY_RESET_TOO_SHORT: 'dailyResetTooShort',
+      DAILY_RESET_LIMIT: 'dailyResetLimitReached',
+      DAILY_RESET_UNAVAILABLE: 'dailyResetInactive',
+      DAILY_RESET_REQUEST_CONFLICT: 'dailyResetFailed',
+      SUBSCRIPTION_NOT_FOUND: 'dailyResetInactive'
+    }
+    // Only an explicit business rejection proves this request did not commit.
+    // An intermediary's 4xx response after an uncertain retry must preserve
+    // the request ID, just like a timeout or a 5xx response.
+    if (err.reason && reasons[err.reason]) {
+      sessionStorage.removeItem(key)
+      resetTarget.value = null
+      appStore.showError(t(`userSubscriptions.${reasons[err.reason || ''] || 'dailyResetFailed'}`))
+    } else {
+      appStore.showError(t('userSubscriptions.dailyResetUncertain'))
+    }
+    await loadSubscriptions()
+  } finally {
+    resetting.value = false
+  }
+}
 
 function subscriptionHasPeakRate(subscription: UserSubscription): boolean {
   return hasPeakRate(subscription.group)
@@ -295,6 +414,7 @@ async function loadSubscriptions() {
   try {
     loading.value = true
     subscriptions.value = await subscriptionsAPI.getMySubscriptions()
+    dailyResetStatus.value = await subscriptionsAPI.getDailyResetStatus().catch(() => null)
   } catch (error) {
     console.error('Failed to load subscriptions:', error)
     appStore.showError(t('userSubscriptions.failedToLoad'))
