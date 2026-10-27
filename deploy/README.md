@@ -2,6 +2,8 @@
 
 This directory contains files for deploying Sub2API on Linux servers and Apple-silicon Macs.
 
+For this fork's build, backup, upgrade, and rollback commands, see [二开版镜像构建与升级说明](CUSTOM_BUILD_CN.md).
+
 ## Deployment Methods
 
 | Method | Best For | Setup Wizard |
