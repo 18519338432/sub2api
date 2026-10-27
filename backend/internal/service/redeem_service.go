@@ -476,6 +476,10 @@ func (s *RedeemService) redeem(ctx context.Context, userID int64, code string, r
 
 	// 将事务放入 context，使 repository 方法能够使用同一事务
 	txCtx := dbent.NewTxContext(ctx, tx)
+	isRewardCard, err := validateRewardCardOwner(txCtx, tx.Client(), redeemCode.ID, userID)
+	if err != nil {
+		return nil, err
+	}
 
 	// 【关键】先标记兑换码为已使用，确保并发安全
 	// 利用数据库乐观锁（WHERE status = 'unused'）保证原子性
@@ -539,6 +543,12 @@ func (s *RedeemService) redeem(ctx context.Context, userID int64, code string, r
 
 	default:
 		return nil, unsupportedRedeemTypeError(redeemCode.Type)
+	}
+
+	if redeemCode.Type == RedeemTypeSubscription && !isRewardCard && ctx.Value(ctxKeySkipRedeemAffiliate{}) == nil {
+		if err := s.grantSubscriptionRewardCard(txCtx, tx.Client(), userID, redeemCode); err != nil {
+			return nil, fmt.Errorf("grant subscription invitation reward: %w", err)
+		}
 	}
 
 	// 提交事务

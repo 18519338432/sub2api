@@ -332,6 +332,8 @@ func (s *AffiliateService) BindInviterByCode(ctx context.Context, userID int64, 
 	if !bound {
 		return ErrAffiliateAlreadyBound
 	}
+	s.invalidateAffiliateCaches(ctx, userID)
+	s.invalidateAffiliateCaches(ctx, inviterSummary.UserID)
 	return nil
 }
 

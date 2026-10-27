@@ -77,6 +77,9 @@ func (r *affiliateRepository) GetAffiliateByCode(ctx context.Context, code strin
 }
 
 func (r *affiliateRepository) BindInviter(ctx context.Context, userID, inviterID int64) (bool, error) {
+	if userID <= 0 || inviterID <= 0 || userID == inviterID {
+		return false, service.ErrAffiliateCodeInvalid
+	}
 	var bound bool
 	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
 		if _, err := ensureUserAffiliateWithClient(txCtx, txClient, userID); err != nil {
@@ -106,6 +109,16 @@ func (r *affiliateRepository) BindInviter(ctx context.Context, userID, inviterID
 			return fmt.Errorf("increment inviter aff_count: %w", err)
 		}
 		bound = true
+		// The binding transition is the one-time registration reward claim.
+		// Both balances and audit rows commit together with the invitation.
+		for _, beneficiary := range []int64{userID, inviterID} {
+			if _, err = txClient.ExecContext(txCtx, `INSERT INTO user_activity_rewards(user_id,kind,source_key,amount_cents) VALUES($1,'registration',$2,500)`, beneficiary, fmt.Sprintf("%d:%d", userID, beneficiary)); err != nil {
+				return fmt.Errorf("record registration reward: %w", err)
+			}
+		}
+		if _, err = txClient.ExecContext(txCtx, "UPDATE users SET balance=balance+5,updated_at=NOW() WHERE id IN ($1,$2)", userID, inviterID); err != nil {
+			return fmt.Errorf("credit registration rewards: %w", err)
+		}
 		return nil
 	})
 	if err != nil {

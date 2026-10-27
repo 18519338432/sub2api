@@ -15,6 +15,10 @@ vi.mock('@/api/user', () => ({
   },
 }))
 
+vi.mock('@/api/activityRewards', () => ({
+  getRewardCards: vi.fn().mockResolvedValue([]),
+}))
+
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
     showError: vi.fn(),

@@ -147,6 +147,17 @@ func TestAffiliateRepository_AccrueQuota_ReusesOuterTransaction(t *testing.T) {
 	bound, err := repo.BindInviter(txCtx, invitee.ID, inviter.ID)
 	require.NoError(t, err)
 	require.True(t, bound, "invitee must bind to inviter")
+	for _, beneficiary := range []int64{inviter.ID, invitee.ID} {
+		require.InDelta(t, 5, querySingleFloat(t, txCtx, client,
+			"SELECT balance::double precision FROM users WHERE id=$1", beneficiary), 1e-9)
+	}
+	bound, err = repo.BindInviter(txCtx, invitee.ID, inviter.ID)
+	require.NoError(t, err)
+	require.False(t, bound, "repeated binding must not grant another registration reward")
+	require.Equal(t, 2, querySingleInt(t, txCtx, client,
+		"SELECT COUNT(*) FROM user_activity_rewards WHERE kind='registration' AND user_id IN ($1,$2)", inviter.ID, invitee.ID))
+	require.InDelta(t, 5, querySingleFloat(t, txCtx, client,
+		"SELECT balance::double precision FROM users WHERE id=$1", inviter.ID), 1e-9)
 
 	applied, err := repo.AccrueQuota(txCtx, inviter.ID, invitee.ID, 3.5, 0, nil)
 	require.NoError(t, err)

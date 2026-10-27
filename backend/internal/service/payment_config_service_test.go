@@ -401,6 +401,7 @@ func newPaymentConfigServiceTestClient(t *testing.T) *dbent.Client {
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
 	client := enttest.NewClient(t, enttest.WithOptions(dbent.Driver(drv)))
+	ensureActivityRewardTestSchema(t, client)
 	t.Cleanup(func() { _ = client.Close() })
 	return client
 }

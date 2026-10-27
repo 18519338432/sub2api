@@ -1,5 +1,6 @@
 <template>
   <AppLayout>
+    <AffiliateRewardCards class="mb-6" />
     <div class="space-y-6">
       <div v-if="loading" class="flex justify-center py-12">
         <div
@@ -140,6 +141,7 @@
 </template>
 
 <script setup lang="ts">
+import AffiliateRewardCards from '@/components/user/AffiliateRewardCards.vue'
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
