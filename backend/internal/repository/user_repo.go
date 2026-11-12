@@ -881,22 +881,11 @@ func (r *userRepository) ApplyRedeemBalanceAdjustment(ctx context.Context, id in
 // 透支策略：允许余额变为负数，确保当前请求能够完成
 // 中间件会阻止余额 <= 0 的用户发起后续请求
 func (r *userRepository) DeductBalance(ctx context.Context, id int64, amount float64) error {
-	client := clientFromContext(ctx, r.client)
-	n, err := client.User.Update().
-		Where(dbuser.IDEQ(id), dbuser.BalanceGTE(amount)).
-		AddBalance(-amount).
-		Save(ctx)
+	result, err := clientFromContext(ctx, r.client).ExecContext(ctx, `SELECT charge_user_balance($1, $2)`, id, amount)
 	if err != nil {
 		return err
 	}
-	if n > 0 {
-		return nil
-	}
-
-	n, err = client.User.Update().
-		Where(dbuser.IDEQ(id)).
-		AddBalance(-amount).
-		Save(ctx)
+	n, err := result.RowsAffected()
 	if err != nil {
 		return err
 	}

@@ -310,6 +310,11 @@ func (s *BillingCacheService) logCacheWriteDrop(task cacheWriteTask, reason stri
 
 // GetUserBalance 获取用户余额（优先从缓存读取）
 func (s *BillingCacheService) GetUserBalance(ctx context.Context, userID int64) (float64, error) {
+	if live, ok := s.userRepo.(interface {
+		GetSpendableBalance(context.Context, int64) (float64, error)
+	}); ok {
+		return live.GetSpendableBalance(ctx, userID)
+	}
 	if s.cache == nil {
 		// Redis不可用，直接查询数据库
 		return s.getUserBalanceFromDB(ctx, userID)

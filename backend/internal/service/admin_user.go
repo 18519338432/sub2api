@@ -1253,6 +1253,11 @@ func (s *adminServiceImpl) GetRedeemCode(ctx context.Context, id int64) (*Redeem
 }
 
 func (s *adminServiceImpl) GenerateRedeemCodes(ctx context.Context, input *GenerateRedeemCodesInput) ([]RedeemCode, error) {
+	if input.Type == RedeemTypeTimedBalance {
+		if err := validateTimedBalance(input.Value, input.ValidityDays); err != nil {
+			return nil, err
+		}
+	}
 	if input.ExpiresAt != nil && !input.ExpiresAt.After(time.Now()) {
 		return nil, ErrRedeemCodeExpired
 	}
@@ -1286,7 +1291,7 @@ func (s *adminServiceImpl) GenerateRedeemCodes(ctx context.Context, input *Gener
 			ExpiresAt: input.ExpiresAt,
 		}
 		// 订阅类型专用字段
-		if input.Type == RedeemTypeSubscription {
+		if input.Type == RedeemTypeSubscription || input.Type == RedeemTypeTimedBalance {
 			code.GroupID = input.GroupID
 			code.ValidityDays = input.ValidityDays
 			if code.ValidityDays <= 0 {

@@ -268,7 +268,16 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 				}
 			} else {
 				// 非订阅模式 或 订阅模式但 subscriptionService 未注入：回退到余额检查
-				if apiKeyBalanceBelowAuthThreshold(apiKey.User.Balance, cfg) {
+				balance := apiKey.User.Balance
+				if subscriptionService != nil {
+					live, err := subscriptionService.SpendableBalance(c.Request.Context(), apiKey.User.ID, balance)
+					if err != nil {
+						AbortWithError(c, 503, "BILLING_UNAVAILABLE", "Unable to verify account balance")
+						return
+					}
+					balance = live
+				}
+				if apiKeyBalanceBelowAuthThreshold(balance, cfg) {
 					AbortWithError(c, 403, "INSUFFICIENT_BALANCE", "Insufficient account balance")
 					return
 				}

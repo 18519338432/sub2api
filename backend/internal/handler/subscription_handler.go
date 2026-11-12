@@ -80,6 +80,20 @@ type SubscriptionHandler struct {
 	subscriptionService *service.SubscriptionService
 }
 
+func (h *SubscriptionHandler) ListTimedBalances(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not found in context")
+		return
+	}
+	items, err := h.subscriptionService.ListTimedBalances(c.Request.Context(), subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, items)
+}
+
 // NewSubscriptionHandler creates a new user subscription handler
 func NewSubscriptionHandler(subscriptionService *service.SubscriptionService) *SubscriptionHandler {
 	return &SubscriptionHandler{

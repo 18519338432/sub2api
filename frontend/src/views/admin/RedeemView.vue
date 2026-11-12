@@ -124,13 +124,13 @@
                     : 'badge-primary'
               ]"
             >
-              {{ t('admin.redeem.types.' + value) }}
+              {{ value === 'timed_balance' ? '限时余额' : t('admin.redeem.types.' + value) }}
             </span>
           </template>
 
           <template #cell-value="{ value, row }">
             <span class="text-sm font-medium text-gray-900 dark:text-white">
-              <template v-if="row.type === 'balance'">${{ value.toFixed(2) }}</template>
+              <template v-if="row.type === 'balance' || row.type === 'timed_balance'">${{ value.toFixed(2) }}<span v-if="row.type === 'timed_balance'"> / {{ row.validity_days }} 天</span></template>
               <template v-else-if="row.type === 'subscription'">
                 {{ row.validity_days || 30 }} {{ t('admin.redeem.days') }}
                 <span v-if="row.group" class="ml-1 text-xs text-gray-500 dark:text-gray-400"
@@ -299,8 +299,8 @@
               <input
                 v-model.number="generateForm.value"
                 type="number"
-                :step="generateForm.type === 'balance' ? '0.01' : '1'"
-                :min="generateForm.type === 'balance' ? '0.01' : '1'"
+                :step="generateForm.type === 'balance' || generateForm.type === 'timed_balance' ? '0.01' : '1'"
+                :min="generateForm.type === 'balance' || generateForm.type === 'timed_balance' ? '0.01' : '1'"
                 required
                 class="input"
               />
@@ -312,6 +312,10 @@
               </p>
             </div>
             <!-- 订阅类型：显示分组选择和有效天数 -->
+            <div v-if="generateForm.type === 'timed_balance'">
+              <label class="input-label">余额有效期（兑换后开始，天）</label>
+              <input v-model.number="generateForm.validity_days" type="number" min="1" max="3650" required class="input" />
+            </div>
             <template v-if="generateForm.type === 'subscription'">
               <div>
                 <label class="input-label">{{ t('admin.redeem.selectGroup') }}</label>
@@ -740,6 +744,7 @@ const columns = computed<Column[]>(() => [
 ])
 
 const typeOptions = computed(() => [
+  { value: 'timed_balance', label: '限时余额' },
   { value: 'balance', label: t('admin.redeem.balance') },
   { value: 'concurrency', label: t('admin.redeem.concurrency') },
   { value: 'subscription', label: t('admin.redeem.subscription') },
@@ -747,6 +752,7 @@ const typeOptions = computed(() => [
 ])
 
 const filterTypeOptions = computed(() => [
+  { value: 'timed_balance', label: '限时余额' },
   { value: '', label: t('admin.redeem.allTypes') },
   { value: 'balance', label: t('admin.redeem.balance') },
   { value: 'concurrency', label: t('admin.redeem.concurrency') },
@@ -1045,7 +1051,7 @@ const handleGenerateCodes = async () => {
       generateForm.type,
       generateForm.value,
       generateForm.type === 'subscription' ? generateForm.group_id : undefined,
-      generateForm.type === 'subscription' ? generateForm.validity_days : undefined,
+      generateForm.type === 'subscription' || generateForm.type === 'timed_balance' ? generateForm.validity_days : undefined,
       expiresInDays
     )
     showGenerateDialog.value = false

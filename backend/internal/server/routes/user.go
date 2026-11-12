@@ -144,6 +144,7 @@ func RegisterUserRoutes(
 			subscriptions.GET("/progress", h.Subscription.GetProgress)
 			subscriptions.GET("/summary", h.Subscription.GetSummary)
 			subscriptions.GET("/daily-reset-status", h.Subscription.GetDailyResetStatus)
+			subscriptions.GET("/timed-balances", h.Subscription.ListTimedBalances)
 			subscriptions.POST("/:id/reset-daily-quota", h.Subscription.ResetDailyQuota)
 		}
 

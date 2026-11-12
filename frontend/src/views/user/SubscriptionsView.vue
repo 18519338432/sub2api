@@ -1,6 +1,13 @@
 <template>
   <AppLayout>
     <div class="space-y-6">
+      <section v-if="timedBalances.length" class="card p-6">
+        <h2 class="mb-4 text-lg font-semibold">限时余额订阅</h2>
+        <div v-for="balance in timedBalances" :key="balance.id" class="border-b py-3 last:border-0">
+          <p>总额 ${{ balance.amount.toFixed(2) }} · 剩余额度 ${{ balance.remaining.toFixed(2) }}</p>
+          <p class="text-sm text-gray-500">到期时间：{{ new Date(balance.expires_at).toLocaleString() }} · {{ balance.status === 'expired' || Date.parse(balance.expires_at) <= Date.now() ? '已过期' : balance.status === 'exhausted' ? '已用完' : '生效中' }}</p>
+        </div>
+      </section>
       <!-- Loading State -->
       <div v-if="loading" class="flex justify-center py-12">
         <div
@@ -9,7 +16,7 @@
       </div>
 
       <!-- Empty State -->
-      <div v-else-if="subscriptions.length === 0" class="card p-12 text-center">
+      <div v-else-if="subscriptions.length === 0 && timedBalances.length === 0" class="card p-12 text-center">
         <div
           class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100 dark:bg-dark-700"
         >
@@ -293,6 +300,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import subscriptionsAPI from '@/api/subscriptions'
+import type { TimedBalance } from '@/api/subscriptions'
 import type { DailyQuotaResetStatus } from '@/api/subscriptions'
 import type { UserSubscription } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -323,6 +331,7 @@ const router = useRouter()
 const appStore = useAppStore()
 
 const subscriptions = ref<UserSubscription[]>([])
+const timedBalances = ref<TimedBalance[]>([])
 const loading = ref(true)
 const dailyResetStatus = ref<DailyQuotaResetStatus | null>(null)
 const resetTarget = ref<UserSubscription | null>(null)
@@ -413,7 +422,9 @@ function subscriptionPeakRateLabel(subscription: UserSubscription): string {
 async function loadSubscriptions() {
   try {
     loading.value = true
-    subscriptions.value = await subscriptionsAPI.getMySubscriptions()
+    const [plans, balances] = await Promise.all([subscriptionsAPI.getMySubscriptions(), subscriptionsAPI.getTimedBalances()])
+    subscriptions.value = plans
+    timedBalances.value = balances
     dailyResetStatus.value = await subscriptionsAPI.getDailyResetStatus().catch(() => null)
   } catch (error) {
     console.error('Failed to load subscriptions:', error)

@@ -243,6 +243,11 @@ func incrementUsageBillingSubscription(ctx context.Context, tx *sql.Tx, subscrip
 }
 
 func deductUsageBillingBalance(ctx context.Context, tx *sql.Tx, userID int64, amount float64) (float64, bool, error) {
+	var ordinaryCost float64
+	if err := tx.QueryRowContext(ctx, `SELECT deduct_timed_balance($1, $2)`, userID, amount).Scan(&ordinaryCost); err != nil {
+		return 0, false, err
+	}
+	amount = ordinaryCost
 	var newBalance float64
 	err := tx.QueryRowContext(ctx, `
 		UPDATE users
@@ -278,13 +283,23 @@ func reserveUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *
 	if cmd.HoldAmount <= 0 {
 		return &service.BatchImageBalanceHoldResult{}, nil
 	}
+	var lockedID int64
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM users WHERE id = $1 AND deleted_at IS NULL FOR UPDATE`, cmd.UserID).Scan(&lockedID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, service.ErrUserNotFound
+		}
+		return nil, err
+	}
 	var balance, frozen float64
 	err := tx.QueryRowContext(ctx, `
 		UPDATE users
 		SET balance = balance - $1,
 			frozen_balance = COALESCE(frozen_balance, 0) + $1,
 			updated_at = NOW()
-		WHERE id = $2 AND deleted_at IS NULL AND balance >= $1
+		WHERE id = $2 AND deleted_at IS NULL AND balance + COALESCE((
+			SELECT SUM(remaining) FROM user_timed_balances
+			WHERE user_id = users.id AND remaining > 0 AND expires_at > clock_timestamp()
+		), 0) >= $1
 		RETURNING balance, frozen_balance
 	`, cmd.HoldAmount, cmd.UserID).Scan(&balance, &frozen)
 	if err == nil {
@@ -308,17 +323,19 @@ func captureUsageBillingBatchImageBalance(ctx context.Context, tx *sql.Tx, cmd *
 	if cmd.ActualAmount-cmd.HoldAmount > 0.00000001 {
 		return nil, service.ErrBatchImageSettlementCostExceedsHold
 	}
+	var ordinaryCost float64
+	if err := tx.QueryRowContext(ctx, `SELECT deduct_timed_balance($1, $2)`, cmd.UserID, cmd.ActualAmount).Scan(&ordinaryCost); err != nil {
+		return nil, err
+	}
 	var balance, frozen float64
 	err := tx.QueryRowContext(ctx, `
 		UPDATE users
-		SET balance = balance
-				+ CASE WHEN $1 > $2 THEN $1 - $2 ELSE 0 END
-				- CASE WHEN $2 > $1 THEN $2 - $1 ELSE 0 END,
+		SET balance = balance + $1 - $2,
 			frozen_balance = COALESCE(frozen_balance, 0) - $1,
 			updated_at = NOW()
 		WHERE id = $3 AND deleted_at IS NULL AND COALESCE(frozen_balance, 0) >= $1
 		RETURNING balance, frozen_balance
-	`, cmd.HoldAmount, cmd.ActualAmount, cmd.UserID).Scan(&balance, &frozen)
+	`, cmd.HoldAmount, ordinaryCost, cmd.UserID).Scan(&balance, &frozen)
 	if err == nil {
 		return &service.BatchImageBalanceHoldResult{NewBalance: &balance, FrozenBalance: &frozen}, nil
 	}

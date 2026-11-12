@@ -260,6 +260,11 @@ func (s *RedeemService) CreateCode(ctx context.Context, code *RedeemCode) error 
 	if code.Type == "" {
 		code.Type = RedeemTypeBalance
 	}
+	if code.Type == RedeemTypeTimedBalance {
+		if err := validateTimedBalance(code.Value, code.ValidityDays); err != nil {
+			return err
+		}
+	}
 	if code.Type != RedeemTypeInvitation && code.Value == 0 {
 		return errors.New("value must not be zero")
 	}
@@ -453,6 +458,10 @@ func (s *RedeemService) redeem(ctx context.Context, userID int64, code string, r
 	// 验证兑换码类型的前置条件。邀请码属于注册流程，不能通过普通兑换接口使用。
 	switch redeemCode.Type {
 	case RedeemTypeBalance, RedeemTypeConcurrency:
+	case RedeemTypeTimedBalance:
+		if err := validateTimedBalance(redeemCode.Value, redeemCode.ValidityDays); err != nil {
+			return nil, err
+		}
 	case RedeemTypeSubscription:
 		if redeemCode.GroupID == nil {
 			return nil, infraerrors.BadRequest("REDEEM_CODE_INVALID", "invalid subscription redeem code: missing group_id")
@@ -492,6 +501,13 @@ func (s *RedeemService) redeem(ctx context.Context, userID int64, code string, r
 
 	// 执行兑换逻辑（兑换码已被锁定，此时可安全操作）
 	switch redeemCode.Type {
+	case RedeemTypeTimedBalance:
+		_, err := tx.Client().ExecContext(txCtx, `INSERT INTO user_timed_balances
+		(user_id, redeem_code_id, amount, remaining, expires_at)
+		VALUES ($1, $2, $3, $3, NOW() + $4 * INTERVAL '1 day')`, userID, redeemCode.ID, redeemCode.Value, redeemCode.ValidityDays)
+		if err != nil {
+			return nil, fmt.Errorf("grant timed balance: %w", err)
+		}
 	case RedeemTypeBalance:
 		amount := redeemCode.Value
 		if amount < 0 {
@@ -576,7 +592,7 @@ func (s *RedeemService) redeem(ctx context.Context, userID int64, code string, r
 // invalidateRedeemCaches 失效兑换相关的缓存
 func (s *RedeemService) invalidateRedeemCaches(ctx context.Context, userID int64, redeemCode *RedeemCode) {
 	switch redeemCode.Type {
-	case RedeemTypeBalance:
+	case RedeemTypeBalance, RedeemTypeTimedBalance:
 		if s.authCacheInvalidator != nil {
 			s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, userID)
 		}

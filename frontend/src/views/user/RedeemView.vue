@@ -98,7 +98,10 @@
                 <div class="mt-2 text-sm text-emerald-700 dark:text-emerald-400">
                   <p>{{ redeemResult.message }}</p>
                   <div class="mt-3 space-y-1">
-                    <p v-if="redeemResult.type === 'balance'" class="font-medium">
+                    <p v-if="redeemResult.type === 'timed_balance'" class="font-medium">
+                      限时余额到账：${{ redeemResult.value.toFixed(2) }}，有效期 {{ redeemResult.validity_days }} 天。可在“我的订阅”查看。
+                    </p>
+                    <p v-else-if="redeemResult.type === 'balance'" class="font-medium">
                       {{ t('redeem.added') }}: ${{ redeemResult.value.toFixed(2) }}
                     </p>
                     <p v-else-if="redeemResult.type === 'concurrency'" class="font-medium">
@@ -408,7 +411,7 @@ const contactInfo = ref('')
 
 // Helper functions for history display
 const isBalanceType = (type: string) => {
-  return type === 'balance' || type === 'admin_balance'
+  return type === 'balance' || type === 'timed_balance' || type === 'admin_balance'
 }
 
 const isSubscriptionType = (type: string) => {
@@ -420,6 +423,7 @@ const isAdminAdjustment = (type: string) => {
 }
 
 const getHistoryItemTitle = (item: RedeemHistoryItem) => {
+  if (item.type === 'timed_balance') return '限时余额兑换'
   if (item.type === 'balance') {
     return t('redeem.balanceAddedRedeem')
   } else if (item.type === 'admin_balance') {

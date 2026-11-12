@@ -203,7 +203,16 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 
 			c.Set(string(ContextKeySubscription), subscription)
 		} else {
-			if apiKeyBalanceBelowAuthThreshold(apiKey.User.Balance, cfg) {
+			balance := apiKey.User.Balance
+			if subscriptionService != nil {
+				live, err := subscriptionService.SpendableBalance(c.Request.Context(), apiKey.User.ID, balance)
+				if err != nil {
+					abortWithGoogleError(c, 503, "Unable to verify account balance")
+					return
+				}
+				balance = live
+			}
+			if apiKeyBalanceBelowAuthThreshold(balance, cfg) {
 				abortWithGoogleError(c, 403, "Insufficient account balance")
 				return
 			}

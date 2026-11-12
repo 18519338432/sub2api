@@ -5,6 +5,19 @@
 
 import { apiClient } from './client'
 import type { UserSubscription, SubscriptionProgress } from '@/types'
+export interface TimedBalance {
+  id: number
+  amount: number
+  remaining: number
+  created_at: string
+  expires_at: string
+  status: 'active' | 'expired' | 'exhausted'
+}
+
+export async function getTimedBalances(): Promise<TimedBalance[]> {
+  const { data } = await apiClient.get<TimedBalance[]>('/subscriptions/timed-balances')
+  return data
+}
 
 export interface DailyQuotaResetStatus {
   used: number
@@ -87,6 +100,7 @@ export async function getSubscriptionProgress(
 }
 
 export default {
+  getTimedBalances,
   getDailyResetStatus,
   resetDailyQuota,
   getMySubscriptions,

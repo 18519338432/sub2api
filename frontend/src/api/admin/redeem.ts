@@ -79,7 +79,7 @@ export async function generate(
   }
 
   // 订阅类型专用字段
-  if (type === 'subscription') {
+  if (type === 'subscription' || type === 'timed_balance') {
     payload.group_id = groupId
     if (validityDays && validityDays > 0) {
       payload.validity_days = validityDays
