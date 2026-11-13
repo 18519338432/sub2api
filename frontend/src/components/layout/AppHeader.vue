@@ -76,6 +76,7 @@
           </svg>
           <span class="text-sm font-semibold text-primary-700 dark:text-primary-300">
             {{ formatHeaderMoney(availableBalance) }}
+            <span v-if="timedAmount > 0" class="ml-1 text-xs font-medium">· 限时 {{ formatHeaderMoney(timedAmount) }}</span>
           </span>
           <span
             v-if="frozenBalance > 0"
@@ -94,6 +95,8 @@
               <span class="text-gray-500 dark:text-dark-400">{{ balanceFrozenText }}</span>
               <span class="font-medium text-amber-700 dark:text-amber-200">{{ formatHeaderMoney(frozenBalance) }}</span>
             </div>
+            <div class="mt-2 flex items-center justify-between"><span class="text-gray-500 dark:text-dark-400">限时余额</span><span class="font-medium text-emerald-700 dark:text-emerald-300">{{ formatHeaderMoney(timedAmount) }}</span></div>
+            <div v-if="timedAmount > 0" class="mt-1 flex items-center justify-between text-gray-500 dark:text-gray-400"><span>最近一笔到期</span><span>{{ timedDays }}<span class="ml-1">天</span></span></div>
             <div class="mt-2 border-t border-gray-100 pt-2 dark:border-dark-700">
               <div class="flex items-center justify-between">
                 <span class="text-gray-500 dark:text-dark-400">{{ balanceTotalText }}</span>
@@ -143,6 +146,7 @@
 
               <!-- Balance (mobile only) -->
               <div class="border-b border-gray-100 px-4 py-2 dark:border-dark-700 sm:hidden">
+                <div v-if="timedAmount > 0" class="mb-2 text-xs text-emerald-700 dark:text-emerald-300">限时余额 {{ formatHeaderMoney(timedAmount) }} · 最近一笔 {{ timedDays }} 天到期</div>
                 <div class="text-xs text-gray-500 dark:text-dark-400">
                   {{ t('common.balance') }}
                 </div>
@@ -252,7 +256,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { getTimedBalances, type TimedBalance } from '@/api/subscriptions'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
@@ -283,7 +288,25 @@ const modelPlazaEnabled = computed(() => isFeatureFlagEnabled(FeatureFlags.model
 const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
 const availableBalance = computed(() => Number(user.value?.balance || 0))
 const frozenBalance = computed(() => Number(user.value?.frozen_balance || 0))
-const totalBalance = computed(() => availableBalance.value + frozenBalance.value)
+const headerGrants = ref<TimedBalance[]>([])
+const balanceNow = ref(Date.now())
+const activeGrants = computed(() => headerGrants.value.filter(b => b.status === 'active' && b.remaining > 0 && Date.parse(b.expires_at) > balanceNow.value))
+const timedAmount = computed(() => activeGrants.value.reduce((sum, b) => sum + b.remaining, 0))
+const timedDays = computed(() => { const ms = Math.min(...activeGrants.value.map(b => Date.parse(b.expires_at))) - balanceNow.value; return ms < 86400000 ? '不足 1' : String(Math.ceil(ms / 86400000)) })
+const totalBalance = computed(() => availableBalance.value + frozenBalance.value + timedAmount.value)
+let timedRefresh: ReturnType<typeof setInterval> | undefined
+let headerRequest = 0
+async function refreshTimedBalance() {
+  const request = ++headerRequest
+  if (!user.value) { headerGrants.value = []; return }
+  const id = user.value.id
+  try { const grants = await getTimedBalances(); if (request === headerRequest && user.value?.id === id) headerGrants.value = grants } catch { /* Keep the last successful snapshot; expiry is checked locally. */ }
+  balanceNow.value = Date.now()
+}
+watch(() => user.value?.id, () => { headerGrants.value = []; void refreshTimedBalance() }, { immediate: true })
+watch(() => route.fullPath, () => { void refreshTimedBalance() })
+onMounted(() => { timedRefresh = setInterval(() => { balanceNow.value = Date.now(); void refreshTimedBalance() }, 60000) })
+onBeforeUnmount(() => { headerRequest++; if (timedRefresh) clearInterval(timedRefresh) })
 const balanceAvailableText = computed(() => t('common.availableBalance') === 'common.availableBalance' ? '可用余额' : t('common.availableBalance'))
 const balanceFrozenText = computed(() => t('common.frozenBalance') === 'common.frozenBalance' ? '冻结金额' : t('common.frozenBalance'))
 const balanceTotalText = computed(() => t('common.totalBalance') === 'common.totalBalance' ? '总余额' : t('common.totalBalance'))

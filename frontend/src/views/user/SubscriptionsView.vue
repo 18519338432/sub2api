@@ -3,10 +3,7 @@
     <div class="space-y-6">
       <section v-if="timedBalances.length" class="card p-6">
         <h2 class="mb-4 text-lg font-semibold">限时余额订阅</h2>
-        <div v-for="balance in timedBalances" :key="balance.id" class="border-b py-3 last:border-0">
-          <p>总额 ${{ balance.amount.toFixed(2) }} · 剩余额度 ${{ balance.remaining.toFixed(2) }}</p>
-          <p class="text-sm text-gray-500">到期时间：{{ new Date(balance.expires_at).toLocaleString() }} · {{ balance.status === 'expired' || Date.parse(balance.expires_at) <= Date.now() ? '已过期' : balance.status === 'exhausted' ? '已用完' : '生效中' }}</p>
-        </div>
+        <div class="grid gap-4 md:grid-cols-2"><TimedBalanceCard v-for="balance in timedBalances" :key="balance.id" :balance="balance" /></div>
       </section>
       <!-- Loading State -->
       <div v-if="loading" class="flex justify-center py-12">
@@ -300,6 +297,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import subscriptionsAPI from '@/api/subscriptions'
+import TimedBalanceCard from '@/components/common/TimedBalanceCard.vue'
 import type { TimedBalance } from '@/api/subscriptions'
 import type { DailyQuotaResetStatus } from '@/api/subscriptions'
 import type { UserSubscription } from '@/types'

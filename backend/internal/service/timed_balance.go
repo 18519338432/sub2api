@@ -10,6 +10,46 @@ import (
 
 const RedeemTypeTimedBalance = "timed_balance"
 
+type AdminTimedBalance struct {
+	TimedBalance
+	UserID int64  `json:"user_id"`
+	Email  string `json:"email"`
+}
+
+func (s *SubscriptionService) ListAdminTimedBalances(ctx context.Context, userID int64, status string, page, size int) ([]AdminTimedBalance, int64, error) {
+	base := ` FROM (SELECT b.*, u.email, CASE WHEN b.remaining = 0 THEN 'exhausted' WHEN b.expires_at <= clock_timestamp() THEN 'expired' ELSE 'active' END AS state FROM user_timed_balances b JOIN users u ON u.id = b.user_id WHERE u.deleted_at IS NULL) grants WHERE ($1::bigint = 0 OR user_id = $1) AND ($2::text = '' OR state = $2)`
+	rows, err := s.entClient.QueryContext(ctx, `SELECT COUNT(*)`+base, userID, status)
+	if err != nil {
+		return nil, 0, err
+	}
+	var total int64
+	if rows.Next() {
+		err = rows.Scan(&total)
+	}
+	scanErr := rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, 0, err
+	}
+	if scanErr != nil {
+		return nil, 0, scanErr
+	}
+	rows, err = s.entClient.QueryContext(ctx, `SELECT id, amount, remaining, created_at, expires_at, state, user_id, email`+base+` ORDER BY created_at DESC, id DESC LIMIT $3 OFFSET $4`, userID, status, size, (page-1)*size)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	items := make([]AdminTimedBalance, 0)
+	for rows.Next() {
+		var item AdminTimedBalance
+		if err := rows.Scan(&item.ID, &item.Amount, &item.Remaining, &item.CreatedAt, &item.ExpiresAt, &item.Status, &item.UserID, &item.Email); err != nil {
+			return nil, 0, err
+		}
+		items = append(items, item)
+	}
+	return items, total, rows.Err()
+}
+
 func (s *SubscriptionService) SpendableBalance(ctx context.Context, userID int64, fallback float64) (float64, error) {
 	if s.entClient == nil {
 		return fallback, nil

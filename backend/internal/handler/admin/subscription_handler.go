@@ -32,6 +32,37 @@ type SubscriptionHandler struct {
 	subscriptionService *service.SubscriptionService
 }
 
+func (h *SubscriptionHandler) ListTimedBalances(c *gin.Context) {
+	page, size := response.ParsePagination(c)
+	if size > 50 {
+		size = 50
+	}
+	userID := int64(0)
+	if raw := c.Query("user_id"); raw != "" {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || id <= 0 {
+			response.BadRequest(c, "Invalid user_id")
+			return
+		}
+		userID = id
+	}
+	status := c.Query("status")
+	if status != "" && status != "active" && status != "expired" && status != "exhausted" {
+		response.BadRequest(c, "Invalid status")
+		return
+	}
+	if page > 1000000 {
+		response.BadRequest(c, "Invalid page")
+		return
+	}
+	items, total, err := h.subscriptionService.ListAdminTimedBalances(c.Request.Context(), userID, status, page, size)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Paginated(c, items, total, page, size)
+}
+
 // NewSubscriptionHandler creates a new admin subscription handler
 func NewSubscriptionHandler(subscriptionService *service.SubscriptionService) *SubscriptionHandler {
 	return &SubscriptionHandler{
