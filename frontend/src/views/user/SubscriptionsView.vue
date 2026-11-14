@@ -288,7 +288,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
@@ -322,7 +322,15 @@ const { t } = useI18n()
 const router = useRouter()
 const appStore = useAppStore()
 
-const subscriptions = ref<UserSubscription[]>([])
+const allSubscriptions = ref<UserSubscription[]>([])
+const now = ref(Date.now())
+const subscriptions = computed(() =>
+  allSubscriptions.value.filter(subscription =>
+    subscription.status !== 'expired' &&
+    (subscription.expires_at === null || Date.parse(subscription.expires_at) > now.value)
+  )
+)
+let expiryTimer: ReturnType<typeof setInterval> | undefined
 const loading = ref(true)
 const dailyResetStatus = ref<DailyQuotaResetStatus | null>(null)
 const resetTarget = ref<UserSubscription | null>(null)
@@ -413,7 +421,8 @@ function subscriptionPeakRateLabel(subscription: UserSubscription): string {
 async function loadSubscriptions() {
   try {
     loading.value = true
-    subscriptions.value = await subscriptionsAPI.getMySubscriptions()
+    allSubscriptions.value = await subscriptionsAPI.getMySubscriptions()
+    now.value = Date.now()
     dailyResetStatus.value = await subscriptionsAPI.getDailyResetStatus().catch(() => null)
   } catch (error) {
     console.error('Failed to load subscriptions:', error)
@@ -510,5 +519,7 @@ function formatResetTime(windowStart: string | null, windowHours: number): strin
 
 onMounted(() => {
   loadSubscriptions()
+  expiryTimer = setInterval(() => { now.value = Date.now() }, 1000)
 })
+onUnmounted(() => { if (expiryTimer) clearInterval(expiryTimer) })
 </script>
